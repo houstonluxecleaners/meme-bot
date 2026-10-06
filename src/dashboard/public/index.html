@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PumpTrader · Paper Trading</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #0b1020;
+        color: #e9edf8;
+      }
+      body {
+        max-width: 1400px;
+        margin: auto;
+        padding: 32px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      h1 {
+        font-size: 34px;
+        margin-bottom: 4px;
+      }
+      .muted {
+        color: #a3aec8;
+      }
+      .badge {
+        color: #63e6af;
+        border: 1px solid #326854;
+        border-radius: 30px;
+        padding: 8px 14px;
+        font-weight: 700;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 14px;
+        margin: 24px 0;
+      }
+      .card,
+      section {
+        background: #141c30;
+        border: 1px solid #27334e;
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .card strong {
+        display: block;
+        font-size: 25px;
+        margin-top: 10px;
+      }
+      section {
+        margin-top: 18px;
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 13px;
+      }
+      th {
+        color: #a3aec8;
+      }
+      td,
+      th {
+        padding: 12px 8px;
+        border-bottom: 1px solid #27334e;
+        white-space: nowrap;
+      }
+      .warn {
+        color: #ffc879;
+      }
+      a {
+        color: #84b7ff;
+      }
+      .empty {
+        color: #a3aec8;
+        padding: 18px;
+      }
+      #health {
+        padding-top: 18px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>PumpTrader</h1>
+        <div class="muted">
+          Solana mainnet observations · simulated execution
+        </div>
+      </div>
+      <span class="badge">PAPER ONLY</span>
+    </header>
+    <div id="health" class="warn">Connecting to local application…</div>
+    <div id="cards" class="cards"></div>
+    <section>
+      <h2>Open positions</h2>
+      <div id="positions"></div>
+    </section>
+    <section>
+      <h2>Recent paper fills</h2>
+      <div id="trades"></div>
+    </section>
+    <section>
+      <h2>Monitored tokens</h2>
+      <div id="tokens"></div>
+    </section>
+    <section>
+      <h2>Best / worst closed positions</h2>
+      <div id="extremes"></div>
+    </section>
+    <p class="muted">
+      P&L includes estimated fees, adverse slippage and price impact.
+      Unavailable valuations display “Unknown”. No wallets, signatures or real
+      trades.
+    </p>
+    <script>
+      const fmt = (n, d = 5) => (n == null ? "Unknown" : Number(n).toFixed(d));
+      function table(id, columns, rows) {
+        const target = document.getElementById(id);
+        target.replaceChildren();
+        if (!rows.length) {
+          const p = document.createElement("p");
+          p.className = "empty";
+          p.textContent = "No data yet";
+          target.append(p);
+          return;
+        }
+        const t = document.createElement("table"),
+          head = document.createElement("tr");
+        for (const [title] of columns) {
+          const th = document.createElement("th");
+          th.textContent = title;
+          head.append(th);
+        }
+        t.append(head);
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          for (const [, fn] of columns) {
+            const td = document.createElement("td");
+            td.textContent = String(fn(r));
+            tr.append(td);
+          }
+          t.append(tr);
+        }
+        target.append(t);
+      }
+      async function update() {
+        try {
+          const res = await fetch("/api/status");
+          if (!res.ok) throw Error();
+          const s = await res.json();
+          document.getElementById("health").textContent =
+            `RPC: ${s.health.rpc ? "connected" : "unavailable"} · WebSocket: ${s.health.websocket ? "connected" : "reconnecting"} · Catch-up: ${s.health.caughtUp ? "complete" : "entries blocked"}${s.health.error ? " · " + s.health.error : ""}`;
+          const cards = [
+            ["Virtual SOL balance", fmt(s.stats.virtualSolBalance)],
+            ["Total P&L (SOL)", fmt(s.stats.totalPnl)],
+            ["Realized P&L (SOL)", fmt(s.stats.realizedPnl)],
+            ["Unrealized P&L (SOL)", fmt(s.stats.unrealizedPnl)],
+            [
+              "Win rate",
+              s.stats.winRate == null
+                ? "No closed positions"
+                : fmt(s.stats.winRate * 100, 1) + "%",
+            ],
+            ["Paper fills", s.stats.trades],
+            ["Open positions", s.positions.length],
+          ];
+          const root = document.getElementById("cards");
+          root.replaceChildren();
+          for (const [title, value] of cards) {
+            const div = document.createElement("div");
+            div.className = "card";
+            div.textContent = title;
+            const strong = document.createElement("strong");
+            strong.textContent = value;
+            div.append(strong);
+            root.append(div);
+          }
+          table(
+            "positions",
+            [
+              ["Mint", (r) => r.mint],
+              ["Entry price (SOL)", (r) => fmt(r.entryPrice, 10)],
+              ["Remaining raw tokens", (r) => r.remainingRaw],
+              ["Net realized (SOL)", (r) => fmt(r.realizedLamports / 1e9)],
+              [
+                "Exit stage",
+                (r) => (r.tp2 ? "Trailing" : r.tp1 ? "TP1 filled" : "Initial"),
+              ],
+            ],
+            s.positions,
+          );
+          table(
+            "trades",
+            [
+              ["Time", (r) => new Date(r.timestamp).toLocaleString()],
+              ["Mint", (r) => r.mint],
+              ["Side", (r) => r.side],
+              ["Cash flow (SOL)", (r) => fmt(r.cash_lamports / 1e9)],
+              ["Costs (SOL)", (r) => fmt(r.fee_lamports / 1e9)],
+              ["Net realized (SOL)", (r) => fmt(r.realized_lamports / 1e9)],
+              ["Reason", (r) => r.reason],
+            ],
+            s.trades,
+          );
+          table(
+            "tokens",
+            [
+              ["Token", (r) => r.name + " (" + r.symbol + ")"],
+              ["Mint", (r) => r.mint],
+              ["Score", (r) => fmt(r.score, 1)],
+              ["SOL volume", (r) => fmt(r.volumeSol, 3)],
+              ["Buys / sells", (r) => r.buyCount + " / " + r.sellCount],
+              ["Buyers", (r) => r.uniqueBuyers],
+              [
+                "Creator %",
+                (r) =>
+                  r.holders
+                    ? fmt(r.holders.creatorFraction * 100, 1)
+                    : "Unknown",
+              ],
+              [
+                "Top holders %",
+                (r) =>
+                  r.holders ? fmt(r.holders.topFraction * 100, 1) : "Unknown",
+              ],
+              ["Status", (r) => r.error || r.reasons.join(", ") || "Eligible"],
+            ],
+            s.tokens,
+          );
+          table(
+            "extremes",
+            [
+              ["Result", (r) => r.label],
+              ["Mint", (r) => r.mint],
+              ["Net P&L (SOL)", (r) => fmt(r.realizedLamports / 1e9)],
+            ],
+            [
+              ...(s.best ? [{ ...s.best, label: "Best" }] : []),
+              ...(s.worst ? [{ ...s.worst, label: "Worst" }] : []),
+            ],
+          );
+        } catch {
+          document.getElementById("health").textContent =
+            "Local application unavailable. Retrying…";
+        }
+      }
+      update();
+      setInterval(update, 3000);
+    </script>
+  </body>
+</html>
