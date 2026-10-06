@@ -95,3 +95,18 @@ npm run build
 Tests cover creation decoding, program provenance, signed reserves, fee tiers, holder aggregation, missing/stale data, momentum, stop/partial/trailing exits, delayed fresh fills, simulated costs, duplicate positions, slot reservations, daily loss gates, SQLite restart and WebSocket reconnect. Public RPC connectivity is an independent runtime check.
 
 Database files are ignored by Git. To preserve your paper history, back up the SQLite database together with its WAL state after stopping the bot. Use a separate `DATABASE_PATH` for a fresh simulation.
+
+## Using a downloaded source archive
+
+If the implementation has not been uploaded to GitHub yet, extract `PumpTrader.zip`, open Terminal in its `PumpTrader` folder, then run `npm ci`, `cp .env.example .env`, and `npm run dev` as above. The ZIP includes source and the lockfile, but no private settings, database or installed packages.
+
+`PumpTrader.bundle` also preserves the Git commit and complete history. To upload it using your own existing GitHub authentication:
+
+```bash
+git clone /path/to/PumpTrader.bundle meme-bot
+cd meme-bot
+git remote set-url origin https://github.com/houstonluxecleaners/meme-bot.git
+git push -u origin main
+```
+
+If Git needs authentication, connect your GitHub account locally using GitHub Desktop or the GitHub CLI browser login. Never send account credentials in chat.

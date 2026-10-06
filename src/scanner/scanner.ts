@@ -115,14 +115,23 @@ export class Scanner {
       this.health.rpc = true;
       this.health.caughtUp = this.health.websocket && !this.overflow;
       this.health.error = this.overflow ? "EVENT_QUEUE_OVERFLOW" : null;
-    } catch {
+    } catch (error) {
       for (const [program, cursor] of cursors)
         if (cursor) this.store.setState(`cursor:${program}`, cursor);
       this.health.rpc = false;
-      this.health.error = "CATCHUP_FAILED";
+      this.health.error =
+        error instanceof Error &&
+        [
+          "CATCHUP_LIMIT_EXCEEDED",
+          "CATCHUP_TRANSACTION_UNAVAILABLE",
+          "INVALID_CATCHUP_EVENT",
+        ].includes(error.message)
+          ? error.message
+          : "CATCHUP_RPC_FAILED";
       log(
         "warn",
         "Catch-up failed; entries disabled until a complete reconnect catch-up",
+        { reason: this.health.error },
       );
     } finally {
       this.syncing = false;
