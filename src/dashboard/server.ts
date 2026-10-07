@@ -9,6 +9,7 @@ export function dashboard(
   store: Store,
   engine: Engine,
   scanner: Scanner,
+  port: number = config.port,
 ): Server {
   const html = readFileSync(new URL("./public/index.html", import.meta.url));
   const server = createServer((req, res) => {
@@ -37,7 +38,21 @@ export function dashboard(
       const status = {
         mode: "PAPER ONLY",
         health: scanner.health,
+        strategy: {
+          entryScore: config.entryScore,
+          maxPositions: config.maxPositions,
+          positionSol: config.positionSol,
+          stopLoss: config.stopLoss,
+          takeProfit1: config.takeProfit1,
+          takeProfit2: config.takeProfit2,
+          trailingStop: config.trailingStop,
+          dailyLossSol: config.dailyLossSol,
+          maxDataAgeMs: config.maxDataAgeMs,
+        },
         stats: {
+          equitySol: value.unknown
+            ? null
+            : (store.cash() + value.liquidationLamports) / SOL,
           virtualSolBalance: store.cash() / SOL,
           totalPnl: value.unknown
             ? null
@@ -67,7 +82,10 @@ export function dashboard(
         .end(JSON.stringify(status));
       return;
     }
-    if (req.url === "/" || req.url === "/index.html") {
+    if (
+      new URL(req.url ?? "/", "http://localhost").pathname === "/" ||
+      new URL(req.url ?? "/", "http://localhost").pathname === "/index.html"
+    ) {
       res
         .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
         .end(html);
@@ -75,6 +93,6 @@ export function dashboard(
     }
     res.writeHead(404).end();
   });
-  server.listen(config.port, "127.0.0.1");
+  server.listen(port, "127.0.0.1");
   return server;
 }

@@ -110,3 +110,11 @@ git push -u origin main
 ```
 
 If Git needs authentication, connect your GitHub account locally using GitHub Desktop or the GitHub CLI browser login. Never send account credentials in chat.
+
+## Dashboard design preview
+
+The redesigned terminal includes portfolio cards, a session equity chart, position exit stages, searchable momentum rankings, system health, strategy limits and activity views. The live chart collects actual net liquidation observations while that browser tab is open; it is not a historical backtest.
+
+After starting the bot, open `http://localhost:3000/?demo=1` to see the interface populated with **clearly labeled fictional example data**. The preview does not fetch your account data or submit orders. Opening it does not pause the background paper-trading engine. Return to `/` to see your actual account and connection status.
+
+![PumpTrader interface with fictional demonstration data](docs/dashboard-preview.png)
