@@ -7,6 +7,7 @@ import {
 } from "@solana/kit";
 import { z } from "zod";
 import { config } from "../config.js";
+import { RpcRequestError, rpcFailureReason } from "./errors.js";
 import { decode, idls } from "./idl.js";
 const rpc = createSolanaRpc(config.rpcUrl);
 const integer = z
@@ -45,11 +46,8 @@ async function request<T>(
     for (let attempt = 0; ; attempt++) {
       try {
         return await make(AbortSignal.timeout(config.rpcTimeoutMs));
-      } catch {
-        if (attempt >= 2)
-          throw new Error(
-            "RPC request failed; check provider access, rate limits and endpoint settings",
-          );
+      } catch (error) {
+        if (attempt >= 2) throw new RpcRequestError(rpcFailureReason(error));
         await sleep(500 * 2 ** attempt);
       }
     }
@@ -80,18 +78,16 @@ export async function readAccount(
   idl: typeof idls.pump,
   type: string,
 ): Promise<{ data: Record<string, unknown>; slot: number }> {
-  const res = z
-    .object({ context, value: account.nullable() })
-    .parse(
-      await request((signal) =>
-        rpc
-          .getAccountInfo(address(key), {
-            encoding: "base64",
-            commitment: "confirmed",
-          })
-          .send({ abortSignal: signal }),
-      ),
-    );
+  const res = z.object({ context, value: account.nullable() }).parse(
+    await request((signal) =>
+      rpc
+        .getAccountInfo(address(key), {
+          encoding: "base64",
+          commitment: "confirmed",
+        })
+        .send({ abortSignal: signal }),
+    ),
+  );
   if (!res.value || res.value.owner !== owner)
     throw new Error("Missing account or unexpected program owner");
   return {
@@ -107,18 +103,16 @@ export async function readAccount(
 export async function mintInfo(
   mint: string,
 ): Promise<{ supply: bigint; decimals: number; program: string }> {
-  const res = z
-    .object({ value: parsedAccount.nullable() })
-    .parse(
-      await request((signal) =>
-        rpc
-          .getAccountInfo(address(mint), {
-            encoding: "jsonParsed",
-            commitment: "confirmed",
-          })
-          .send({ abortSignal: signal }),
-      ),
-    );
+  const res = z.object({ value: parsedAccount.nullable() }).parse(
+    await request((signal) =>
+      rpc
+        .getAccountInfo(address(mint), {
+          encoding: "jsonParsed",
+          commitment: "confirmed",
+        })
+        .send({ abortSignal: signal }),
+    ),
+  );
   if (
     !res.value ||
     ![TOKEN, TOKEN2022].includes(res.value.owner) ||
@@ -160,18 +154,16 @@ export async function vaultInfo(
   key: string,
   mint: string,
 ): Promise<{ amount: bigint; owner: string; slot: number }> {
-  const res = z
-    .object({ context, value: parsedAccount.nullable() })
-    .parse(
-      await request((signal) =>
-        rpc
-          .getAccountInfo(address(key), {
-            encoding: "jsonParsed",
-            commitment: "confirmed",
-          })
-          .send({ abortSignal: signal }),
-      ),
-    );
+  const res = z.object({ context, value: parsedAccount.nullable() }).parse(
+    await request((signal) =>
+      rpc
+        .getAccountInfo(address(key), {
+          encoding: "jsonParsed",
+          commitment: "confirmed",
+        })
+        .send({ abortSignal: signal }),
+    ),
+  );
   if (
     !res.value ||
     ![TOKEN, TOKEN2022].includes(res.value.owner) ||

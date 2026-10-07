@@ -1552,10 +1552,21 @@
             ? "Connection to your local bot was lost. Displayed data is stale; reconnect before relying on these values."
             : h.error === "CATCHUP_LIMIT_EXCEEDED"
               ? "New paper buys are paused: the missed transaction history exceeds your catch-up budget. Existing positions can still exit with fresh prices."
-              : h.error
-                ? "New paper buys are paused while blockchain data is unavailable or incomplete. " +
-                  h.error
-                : "Connecting and verifying market history. New paper buys remain paused until synchronization completes.";
+              : h.error === "CATCHUP_RPC_FAILED"
+                ? (h.rpcFailure === "RATE_LIMITED"
+                    ? "Your RPC provider is limiting history requests."
+                    : h.rpcFailure === "ACCESS_DENIED"
+                      ? "Your RPC provider denied history access. Check the endpoint settings and provider plan."
+                      : h.rpcFailure === "METHOD_UNSUPPORTED"
+                        ? "This RPC endpoint does not support the required history method."
+                        : "A transaction-history request failed.") +
+                  (h.retryAt
+                    ? " Recovery retries automatically; new paper buys remain paused."
+                    : " New paper buys remain paused until history recovery succeeds.")
+                : h.error
+                  ? "New paper buys are paused while blockchain data is unavailable or incomplete. " +
+                    h.error
+                  : "Connecting and verifying market history. New paper buys remain paused until synchronization completes.";
         $("health-list").replaceChildren();
         for (const [label, good, ok, waiting] of [
           ["RPC connection", h.rpc, "Connected", "Unavailable"],

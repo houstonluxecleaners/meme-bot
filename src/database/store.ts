@@ -39,6 +39,9 @@ export class Store {
       )
       .run(key, toJson(value));
   }
+  deleteState(key: string): void {
+    this.db.prepare("DELETE FROM state WHERE key=?").run(key);
+  }
   cash(): number {
     return this.getState<number>("cash")!;
   }

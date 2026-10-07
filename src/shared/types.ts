@@ -80,6 +80,8 @@ export interface Exit {
   quantityRaw: string;
 }
 export interface Health {
+  rpcFailure?: string | null;
+  retryAt?: number | null;
   rpc: boolean;
   websocket: boolean;
   caughtUp: boolean;

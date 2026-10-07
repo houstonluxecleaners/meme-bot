@@ -1,3 +1,4 @@
+import { RpcRequestError } from "../blockchain/errors.js";
 import { z } from "zod";
 import { config } from "../config.js";
 import { PUMP, AMM, stringField } from "../blockchain/idl.js";
@@ -32,6 +33,8 @@ export class Scanner {
   private syncing = false;
   private stopped = false;
   private overflow = false;
+  private retryTimer?: NodeJS.Timeout;
+  private retryAttempts = 0;
   private readonly seen: Set<string>;
   private readonly subscriptions: Subscriptions;
   constructor(readonly store: Store) {
@@ -54,6 +57,7 @@ export class Scanner {
       (online) => {
         this.health.websocket = online;
         this.health.caughtUp = false;
+        this.cancelRetry();
         if (online) void this.catchup();
       },
     );
@@ -61,8 +65,45 @@ export class Scanner {
   start(): void {
     this.subscriptions.start();
   }
+  private cancelRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    this.health.retryAt = null;
+  }
+  private retryCatchup(): void {
+    if (this.stopped || !this.health.websocket) return;
+    this.cancelRetry();
+    const delay = Math.min(
+      config.catchupRetryMaxMs,
+      config.catchupRetryBaseMs * 2 ** Math.min(this.retryAttempts++, 8),
+    );
+    this.health.retryAt = Date.now() + delay;
+    log("warn", "History recovery will retry; new entries remain blocked", {
+      delayMs: delay,
+      reason: this.health.rpcFailure ?? this.health.error,
+    });
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      this.health.retryAt = null;
+      void this.catchup();
+    }, delay);
+  }
+  private checkpoint(item: Envelope): void {
+    const cursor = this.store.getState<{ slot: number }>(
+      `cursor:${item.program}`,
+    );
+    if (
+      (this.syncing || this.health.caughtUp) &&
+      (!cursor || item.slot >= cursor.slot)
+    )
+      this.store.setState(`cursor:${item.program}`, {
+        signature: item.signature,
+        slot: item.slot,
+      });
+  }
   private async catchup(): Promise<void> {
     if (this.syncing || this.stopped) return;
+    this.cancelRetry();
     this.syncing = true;
     const cursors = new Map(
       [PUMP, AMM].map((program) => [
@@ -112,30 +153,49 @@ export class Scanner {
             throw new Error("INVALID_CATCHUP_EVENT");
         }
       }
+      this.retryAttempts = 0;
+      this.health.rpcFailure = null;
       this.health.rpc = true;
       this.health.caughtUp = this.health.websocket && !this.overflow;
       this.health.error = this.overflow ? "EVENT_QUEUE_OVERFLOW" : null;
     } catch (error) {
       for (const [program, cursor] of cursors)
         if (cursor) this.store.setState(`cursor:${program}`, cursor);
+        else this.store.deleteState(`cursor:${program}`);
       this.health.rpc = false;
       this.health.error =
-        error instanceof Error &&
-        [
-          "CATCHUP_LIMIT_EXCEEDED",
-          "CATCHUP_TRANSACTION_UNAVAILABLE",
-          "INVALID_CATCHUP_EVENT",
-        ].includes(error.message)
-          ? error.message
-          : "CATCHUP_RPC_FAILED";
+        error instanceof z.ZodError
+          ? "CATCHUP_INVALID_RPC_RESPONSE"
+          : error instanceof Error &&
+              [
+                "CATCHUP_LIMIT_EXCEEDED",
+                "CATCHUP_TRANSACTION_UNAVAILABLE",
+                "INVALID_CATCHUP_EVENT",
+              ].includes(error.message)
+            ? error.message
+            : "CATCHUP_RPC_FAILED";
+      this.health.rpcFailure =
+        error instanceof RpcRequestError
+          ? error.reason
+          : error instanceof z.ZodError
+            ? "INVALID_RPC_RESPONSE"
+            : null;
       log(
         "warn",
-        "Catch-up failed; entries disabled until a complete reconnect catch-up",
-        { reason: this.health.error },
+        "History recovery failed; entries stay blocked until recovery completes",
+        { reason: this.health.error, rpcFailure: this.health.rpcFailure },
       );
     } finally {
       this.syncing = false;
       await this.drain();
+      if (
+        (this.health.error === "CATCHUP_RPC_FAILED" &&
+          !["ACCESS_DENIED", "METHOD_UNSUPPORTED"].includes(
+            this.health.rpcFailure ?? "",
+          )) ||
+        this.health.error === "CATCHUP_TRANSACTION_UNAVAILABLE"
+      )
+        this.retryCatchup();
     }
   }
   private async drain(): Promise<void> {
@@ -152,7 +212,10 @@ export class Scanner {
   }
   private process(item: Envelope): boolean {
     const key = `${item.program}:${item.signature}`;
-    if (this.seen.has(key)) return true;
+    if (this.seen.has(key)) {
+      this.checkpoint(item);
+      return true;
+    }
     try {
       const events = decodeLogs(item.logs);
       for (const e of events) {
@@ -202,17 +265,7 @@ export class Scanner {
       if (this.seen.size > 2000)
         this.seen.delete(this.seen.values().next().value!);
       this.store.setState("seenSignatures", [...this.seen]);
-      const cursor = this.store.getState<{ slot: number }>(
-        `cursor:${item.program}`,
-      );
-      if (
-        (this.syncing || this.health.caughtUp) &&
-        (!cursor || item.slot >= cursor.slot)
-      )
-        this.store.setState(`cursor:${item.program}`, {
-          signature: item.signature,
-          slot: item.slot,
-        });
+      this.checkpoint(item);
       return true;
     } catch (error) {
       this.health.caughtUp = false;
@@ -244,6 +297,7 @@ export class Scanner {
   }
   stop(): void {
     this.stopped = true;
+    this.cancelRetry();
     this.subscriptions.stop();
   }
 }

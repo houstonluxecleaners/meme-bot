@@ -51,6 +51,8 @@ export const config = {
   rpcTimeoutMs: 15000,
   rpcMinIntervalMs: 120,
   reconnectMaxMs: 30000,
+  catchupRetryBaseMs: 5000,
+  catchupRetryMaxMs: 60000,
   maxCatchupPages: 50,
   catchupPageSize: 100,
   maxQueuedEvents: 1000,
