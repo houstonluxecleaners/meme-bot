@@ -118,3 +118,5 @@ The redesigned terminal includes portfolio cards, a session equity chart, positi
 After starting the bot, open `http://localhost:3000/?demo=1` to see the interface populated with **clearly labeled fictional example data**. The preview does not fetch your account data or submit orders. Opening it does not pause the background paper-trading engine. Return to `/` to see your actual account and connection status.
 
 ![PumpTrader interface with fictional demonstration data](docs/dashboard-preview.png)
+
+If `EVENT_QUEUE_OVERFLOW` occurs during history recovery, new entries stay blocked, the recovery cursors are restored, and recovery retries automatically. Entries resume only after a complete replay without another overflow. Repeated overflow can indicate that the provider and configured recovery budget cannot keep up with incoming events.

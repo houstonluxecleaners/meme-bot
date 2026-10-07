@@ -49,6 +49,7 @@ export class Scanner {
           this.health.caughtUp = false;
           this.health.error = "EVENT_QUEUE_OVERFLOW";
           this.overflow = true;
+          if (!this.syncing && !this.retryTimer) this.retryCatchup();
           return;
         }
         this.queue.push({ program, signature, logs, slot });
@@ -105,6 +106,8 @@ export class Scanner {
     if (this.syncing || this.stopped) return;
     this.cancelRetry();
     this.syncing = true;
+    this.health.caughtUp = false;
+    this.overflow = false;
     const cursors = new Map(
       [PUMP, AMM].map((program) => [
         program,
@@ -153,6 +156,7 @@ export class Scanner {
             throw new Error("INVALID_CATCHUP_EVENT");
         }
       }
+      if (this.overflow) throw new Error("EVENT_QUEUE_OVERFLOW");
       this.retryAttempts = 0;
       this.health.rpcFailure = null;
       this.health.rpc = true;
@@ -169,6 +173,7 @@ export class Scanner {
           : error instanceof Error &&
               [
                 "CATCHUP_LIMIT_EXCEEDED",
+                "EVENT_QUEUE_OVERFLOW",
                 "CATCHUP_TRANSACTION_UNAVAILABLE",
                 "INVALID_CATCHUP_EVENT",
               ].includes(error.message)
@@ -193,7 +198,8 @@ export class Scanner {
           !["ACCESS_DENIED", "METHOD_UNSUPPORTED"].includes(
             this.health.rpcFailure ?? "",
           )) ||
-        this.health.error === "CATCHUP_TRANSACTION_UNAVAILABLE"
+        this.health.error === "CATCHUP_TRANSACTION_UNAVAILABLE" ||
+        this.health.error === "EVENT_QUEUE_OVERFLOW"
       )
         this.retryCatchup();
     }

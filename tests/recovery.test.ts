@@ -115,6 +115,36 @@ describe("history recovery", () => {
       db.closeDb();
     }
   });
+  it("rolls back an overflowed recovery and replays the gap before allowing entries", async () => {
+    vi.useFakeTimers();
+    const db = new Store(":memory:"), scanner = new Scanner(db);
+    scanner.health.websocket = true;
+    db.setState(`cursor:${PUMP}`, {signature: "old", slot: 1});
+    db.setState(`cursor:${AMM}`, {signature: "amm-old", slot: 1});
+    let first = true;
+    vi.spyOn(rpc, "signatures").mockImplementation(async program => {
+      if (program === PUMP) {
+        if (first) {
+          first = false;
+          (scanner as unknown as {overflow: boolean}).overflow = true;
+        }
+        return [{signature: "new", err: null, slot: 2}, {signature: "old", err: null, slot: 1}];
+      }
+      return [{signature: "amm-old", err: null, slot: 1}];
+    });
+    vi.spyOn(rpc, "transactionLogs").mockResolvedValue({logs: [], slot: 2});
+    try {
+      await (scanner as unknown as Internal).catchup();
+      expect(scanner.health.error).toBe("EVENT_QUEUE_OVERFLOW");
+      expect(scanner.health.caughtUp).toBe(false);
+      expect(db.getState(`cursor:${PUMP}`)).toEqual({signature: "old", slot: 1});
+      expect(scanner.health.retryAt).toBe(Date.now() + config.catchupRetryBaseMs);
+      await vi.advanceTimersByTimeAsync(config.catchupRetryBaseMs);
+      expect(scanner.health.caughtUp).toBe(true);
+      expect(scanner.health.error).toBeNull();
+      expect(db.getState(`cursor:${PUMP}`)).toEqual({signature: "new", slot: 2});
+    } finally {scanner.stop();db.closeDb();}
+  });
   it("reports safe failure categories without echoing credentials", () => {
     const error = {
       message: "https://provider.invalid?api-key=SECRET",
